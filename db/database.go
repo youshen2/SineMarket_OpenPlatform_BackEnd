@@ -58,6 +58,10 @@ func Init() {
 		&models.AppDownload{},
 		&models.Popup{},
 		&models.UserAction{},
+		&models.Banner{},
+		&models.BannedIP{},
+		&models.ProhibitedWord{},
+		&models.UsernameBlacklist{},
 	)
 	if err != nil {
 		log.Fatalf("Failed to auto migrate database: %v", err)

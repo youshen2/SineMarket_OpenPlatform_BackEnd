@@ -97,13 +97,13 @@ func setupRoutes(r *gin.Engine) {
 				appGroup.POST("/:id/downloads", api.AddAppDownload)
 				appGroup.DELETE("/downloads/:download_id", api.DeleteAppDownload)
 
-				admin := appGroup.Group("/")
-				admin.Use(middleware.PermissionMiddleware(1))
+				adminAppGroup := appGroup.Group("/")
+				adminAppGroup.Use(middleware.PermissionMiddleware(1))
 				{
-					admin.POST("/:id/audit", api.AuditApp)
-					admin.GET("/:id/download-test-url", api.GetAppDownloadTestURL)
-					admin.POST("/downloads/:download_id/audit", api.AuditAppDownload)
-					admin.GET("/downloads-to-audit", api.ListDownloadsToAudit)
+					adminAppGroup.POST("/:id/audit", api.AuditApp)
+					adminAppGroup.GET("/:id/download-test-url", api.GetAppDownloadTestURL)
+					adminAppGroup.POST("/downloads/:download_id/audit", api.AuditAppDownload)
+					adminAppGroup.GET("/downloads-to-audit", api.ListDownloadsToAudit)
 				}
 			}
 
@@ -119,6 +119,23 @@ func setupRoutes(r *gin.Engine) {
 				operateGroup.POST("/notice", api.SendNotice)
 				operateGroup.POST("/popup", api.SendPopup)
 				operateGroup.POST("/actions", api.SendActions)
+			}
+
+			adminGroup := authed.Group("/admin")
+			adminGroup.Use(middleware.PermissionMiddleware(2))
+			{
+				adminGroup.GET("/banners", api.ListBanners)
+				adminGroup.POST("/banners", api.CreateBanner)
+				adminGroup.DELETE("/banners/:id", api.DeleteBanner)
+				adminGroup.GET("/banned-ips", api.ListBannedIPs)
+				adminGroup.POST("/banned-ips", api.CreateBannedIP)
+				adminGroup.DELETE("/banned-ips/:id", api.DeleteBannedIP)
+				adminGroup.GET("/prohibited-words", api.ListProhibitedWords)
+				adminGroup.POST("/prohibited-words", api.CreateProhibitedWord)
+				adminGroup.DELETE("/prohibited-words/:id", api.DeleteProhibitedWord)
+				adminGroup.GET("/username-blacklists", api.ListUsernameBlacklists)
+				adminGroup.POST("/username-blacklists", api.CreateUsernameBlacklist)
+				adminGroup.DELETE("/username-blacklists/:id", api.DeleteUsernameBlacklist)
 			}
 		}
 	}
