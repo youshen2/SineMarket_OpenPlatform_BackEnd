@@ -126,16 +126,28 @@ func setupRoutes(r *gin.Engine) {
 			{
 				adminGroup.GET("/banners", api.ListBanners)
 				adminGroup.POST("/banners", api.CreateBanner)
+				adminGroup.PUT("/banners/:id", api.UpdateBanner)
 				adminGroup.DELETE("/banners/:id", api.DeleteBanner)
+				
 				adminGroup.GET("/banned-ips", api.ListBannedIPs)
 				adminGroup.POST("/banned-ips", api.CreateBannedIP)
 				adminGroup.DELETE("/banned-ips/:id", api.DeleteBannedIP)
+				
 				adminGroup.GET("/prohibited-words", api.ListProhibitedWords)
 				adminGroup.POST("/prohibited-words", api.CreateProhibitedWord)
 				adminGroup.DELETE("/prohibited-words/:id", api.DeleteProhibitedWord)
+				
 				adminGroup.GET("/username-blacklists", api.ListUsernameBlacklists)
 				adminGroup.POST("/username-blacklists", api.CreateUsernameBlacklist)
 				adminGroup.DELETE("/username-blacklists/:id", api.DeleteUsernameBlacklist)
+				
+				adminGroup.GET("/comments", api.ListComments)
+				adminGroup.PUT("/comments/:id", api.UpdateComment)
+				adminGroup.DELETE("/comments/:id", api.DeleteComment)
+				
+				adminGroup.GET("/reports", api.ListReports)
+				adminGroup.GET("/reports/:id", api.GetReportDetails)
+				adminGroup.POST("/reports/:id/audit", api.AuditReport)
 			}
 		}
 	}

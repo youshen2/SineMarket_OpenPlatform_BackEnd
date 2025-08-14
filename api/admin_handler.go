@@ -1,11 +1,13 @@
 package api
 
 import (
+	"fmt"
 	"market-api/db"
 	"market-api/models"
 	"market-api/utils"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
@@ -45,6 +47,29 @@ func CreateBanner(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "创建成功", "data": banner})
+}
+
+func UpdateBanner(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var req struct {
+		Actions    string `json:"actions"`
+		Visibility int    `json:"visibility"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误"})
+		return
+	}
+
+	updates := map[string]interface{}{
+		"actions":    req.Actions,
+		"visibility": req.Visibility,
+	}
+
+	if err := db.DB.Model(&models.Banner{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "更新失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "更新成功"})
 }
 
 func DeleteBanner(c *gin.Context) {
@@ -147,4 +172,157 @@ func DeleteUsernameBlacklist(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "删除成功"})
+}
+
+func ListReports(c *gin.Context) {
+	query := db.DB.Model(&models.Report{}).Preload("Reporter")
+
+	if statusStr := c.Query("status"); statusStr != "" {
+		status, _ := strconv.Atoi(statusStr)
+		query = query.Where("report_status = ?", status)
+	}
+
+	if keyword := c.Query("keyword"); keyword != "" {
+		query = query.Where("report_title LIKE ? OR report_ip LIKE ? OR by_userid LIKE ?",
+			"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
+	}
+
+	var total int64
+	query.Count(&total)
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	offset := (page - 1) * pageSize
+
+	var reports []models.Report
+	query.Order("report_time desc").Offset(offset).Limit(pageSize).Find(&reports)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"data": gin.H{
+			"list":  reports,
+			"total": total,
+		},
+	})
+}
+
+func GetReportDetails(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var report models.Report
+	if err := db.DB.Preload("Reporter").First(&report, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "举报不存在"})
+		return
+	}
+
+	var reportedItem interface{}
+	if report.ReportType == 1 {
+		var app models.App
+		db.DB.Preload("Uploader").First(&app, report.ReportID)
+		reportedItem = app
+	} else if report.ReportType == 2 {
+		var comment models.AppReply
+		db.DB.Preload("User").Preload("App").First(&comment, report.ReportID)
+		reportedItem = comment
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"data": gin.H{
+			"report":       report,
+			"reportedItem": reportedItem,
+		},
+	})
+}
+
+type AuditReportRequest struct {
+	Reply      string `json:"reply" binding:"required"`
+	TakeAction bool   `json:"take_action"`
+}
+
+func AuditReport(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var req AuditReportRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误: " + err.Error()})
+		return
+	}
+
+	var report models.Report
+	if err := db.DB.First(&report, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "举报不存在"})
+		return
+	}
+
+	if report.ReportStatus == 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "该举报已被处理"})
+		return
+	}
+
+	currentUser := c.MustGet("user").(models.User)
+	tx := db.DB.Begin()
+
+	updateData := map[string]interface{}{
+		"report_status": 1,
+		"report_reply":  req.Reply,
+		"reply_time":    time.Now().UnixMilli(),
+	}
+	if err := tx.Model(&models.Report{}).Where("id = ?", id).Updates(updateData).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "更新举报状态失败"})
+		return
+	}
+
+	noticeToReporter := models.Notice{
+		ByUserID:     report.ByUserID,
+		SenderUserID: currentUser.ID,
+		Title:        "举报已处理",
+		Content:      fmt.Sprintf("您关于「%s」的举报已由运营【%s】处理。", report.ReportTitle, currentUser.DisplayName),
+		Desc:         "处理回复：" + req.Reply,
+		Time:         time.Now().UnixMilli(),
+	}
+	if err := tx.Create(&noticeToReporter).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "发送通知给举报者失败"})
+		return
+	}
+
+	if req.TakeAction {
+		if report.ReportType == 1 {
+			var app models.App
+			if err := tx.First(&app, report.ReportID).Error; err == nil {
+				appUpdates := map[string]interface{}{
+					"audit_status": 2,
+					"audit_reason": "被用户举报，验证后处理下架",
+					"audit_user":   currentUser.ID,
+				}
+				if err := tx.Model(&app).Updates(appUpdates).Error; err != nil {
+					tx.Rollback()
+					c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "下架应用失败"})
+					return
+				}
+				noticeToUploader := models.Notice{
+					ByUserID:     app.ByUserID,
+					SenderUserID: currentUser.ID,
+					Title:        "应用审核不通过",
+					Content:      fmt.Sprintf("您上传的应用「%s」经用户举报，由【%s】审核后被处理下架。", app.AppName, currentUser.DisplayName),
+					Desc:         "异议请联系对应运营",
+					Time:         time.Now().UnixMilli(),
+				}
+				if err := tx.Create(&noticeToUploader).Error; err != nil {
+					tx.Rollback()
+					c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "发送通知给上传者失败"})
+					return
+				}
+			}
+		} else if report.ReportType == 2 {
+			if err := tx.Model(&models.AppReply{}).Where("id = ?", report.ReportID).Update("visibility", 0).Error; err != nil {
+				tx.Rollback()
+				c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "隐藏评论失败"})
+				return
+			}
+		}
+	}
+
+	tx.Commit()
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "举报处理成功"})
 }

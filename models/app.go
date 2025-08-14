@@ -1,39 +1,39 @@
 package models
 
 type App struct {
-	ID               int    `gorm:"primaryKey;column:id" json:"id"`
-	PackageName      string `gorm:"column:package_name" json:"package_name"`
-	AppName          string `gorm:"column:app_name" json:"app_name"`
-	Keyword          string `gorm:"column:keyword" json:"keyword"`
-	VersionCode      int    `gorm:"column:version_code" json:"version_code"`
-	VersionName      string `gorm:"column:version_name" json:"version_name"`
-	AppIcon          string `gorm:"column:app_icon" json:"app_icon"`
-	ByUserID         int    `gorm:"column:by_userid" json:"by_userid"`
-	AppTypeID        int    `gorm:"column:app_type" json:"app_type_id"`
-	AppVersionTypeID int    `gorm:"column:app_version_type" json:"app_version_type_id"`
-	AppABI           int    `gorm:"column:app_abi" json:"app_abi"`
-	AppTags          string `gorm:"column:app_tags" json:"app_tags"`
-	AppPages         string `gorm:"column:app_pages" json:"app_pages"`
-	AppPreviews      string `gorm:"column:app_previews" json:"app_previews"`
-	AppDescribe      string `gorm:"column:app_describe" json:"app_describe"`
-	AppUpdateLog     string `gorm:"column:app_update_log" json:"app_update_log"`
-	AppDeveloper     string `gorm:"column:app_developer" json:"app_developer"`
-	AppSource        string `gorm:"column:app_source" json:"app_source"`
-	UploadMessage    string `gorm:"column:upload_message" json:"upload_message"`
-	AuditStatus      int    `gorm:"column:audit_status" json:"audit_status"`
-	AuditReason      string `gorm:"column:audit_reason" json:"audit_reason"`
-	AuditUser        int    `gorm:"column:audit_user" json:"audit_user"`
-	AppSdkMin        int    `gorm:"column:app_sdk_min" json:"app_sdk_min"`
-	AppSdkTarget     int    `gorm:"column:app_sdk_target" json:"app_sdk_target"`
-	AppIsWearOS      int    `gorm:"column:app_is_wearos" json:"app_is_wearos"`
-	DownloadSize     string `gorm:"column:download_size" json:"download_size"`
-	UploadTime       int64  `gorm:"column:upload_time" json:"upload_time"`
-	UpdateTime       int64  `gorm:"column:update_time" json:"update_time"`
-	LocalApkPath     string `gorm:"column:local_apk_path" json:"local_apk_path"`
-	LocalIconPath    string `gorm:"column:local_icon_path" json:"local_icon_path"`
-	AppWeight        int    `gorm:"column:app_weight" json:"app_weight"`
-	HasAppUpdateNotice int  `gorm:"column:has_app_update_notice" json:"has_app_update_notice"`
-	Uploader         User   `gorm:"foreignKey:ByUserID" json:"uploader"`
+	ID                 int    `gorm:"primaryKey;column:id" json:"id"`
+	PackageName        string `gorm:"column:package_name" json:"package_name"`
+	AppName            string `gorm:"column:app_name" json:"app_name"`
+	Keyword            string `gorm:"column:keyword" json:"keyword"`
+	VersionCode        int    `gorm:"column:version_code" json:"version_code"`
+	VersionName        string `gorm:"column:version_name" json:"version_name"`
+	AppIcon            string `gorm:"column:app_icon" json:"app_icon"`
+	ByUserID           int    `gorm:"column:by_userid" json:"by_userid"`
+	AppTypeID          int    `gorm:"column:app_type" json:"app_type_id"`
+	AppVersionTypeID   int    `gorm:"column:app_version_type" json:"app_version_type_id"`
+	AppABI             int    `gorm:"column:app_abi" json:"app_abi"`
+	AppTags            string `gorm:"column:app_tags" json:"app_tags"`
+	AppPages           string `gorm:"column:app_pages" json:"app_pages"`
+	AppPreviews        string `gorm:"column:app_previews" json:"app_previews"`
+	AppDescribe        string `gorm:"column:app_describe" json:"app_describe"`
+	AppUpdateLog       string `gorm:"column:app_update_log" json:"app_update_log"`
+	AppDeveloper       string `gorm:"column:app_developer" json:"app_developer"`
+	AppSource          string `gorm:"column:app_source" json:"app_source"`
+	UploadMessage      string `gorm:"column:upload_message" json:"upload_message"`
+	AuditStatus        int    `gorm:"column:audit_status" json:"audit_status"`
+	AuditReason        string `gorm:"column:audit_reason" json:"audit_reason"`
+	AuditUser          int    `gorm:"column:audit_user" json:"audit_user"`
+	AppSdkMin          int    `gorm:"column:app_sdk_min" json:"app_sdk_min"`
+	AppSdkTarget       int    `gorm:"column:app_sdk_target" json:"app_sdk_target"`
+	AppIsWearOS        int    `gorm:"column:app_is_wearos" json:"app_is_wearos"`
+	DownloadSize       string `gorm:"column:download_size" json:"download_size"`
+	UploadTime         int64  `gorm:"column:upload_time" json:"upload_time"`
+	UpdateTime         int64  `gorm:"column:update_time" json:"update_time"`
+	LocalApkPath       string `gorm:"column:local_apk_path" json:"local_apk_path"`
+	LocalIconPath      string `gorm:"column:local_icon_path" json:"local_icon_path"`
+	AppWeight          int    `gorm:"column:app_weight" json:"app_weight"`
+	HasAppUpdateNotice int    `gorm:"column:has_app_update_notice" json:"has_app_update_notice"`
+	Uploader           User   `gorm:"foreignKey:ByUserID" json:"uploader"`
 }
 
 func (App) TableName() string {
@@ -103,8 +103,20 @@ func (UserDownloadCount) TableName() string {
 }
 
 type AppReply struct {
-	ID       int `gorm:"primaryKey;column:id"`
-	ByUserID int `gorm:"column:by_userid"`
+	ID           int    `gorm:"primaryKey;column:id" json:"id"`
+	AppID        int    `gorm:"column:app_id" json:"app_id"`
+	ByUserID     int    `gorm:"column:by_userid" json:"by_userid"`
+	Content      string `gorm:"column:content" json:"content"`
+	SendTime     int64  `gorm:"column:send_time" json:"send_time"`
+	Visibility   int    `gorm:"column:visibility" json:"visibility"`
+	FatherReplyID int   `gorm:"column:father_reply_id" json:"father_reply_id"`
+	NoticeID     int    `gorm:"column:notice_id" json:"notice_id"`
+	SendDevices  string `gorm:"column:send_devices" json:"send_devices"`
+	SendVersion  int    `gorm:"column:send_version" json:"send_version"`
+	SendIP       string `gorm:"column:send_ip" json:"send_ip"`
+	Official     string `gorm:"column:official" json:"official"`
+	User         User   `gorm:"foreignKey:ByUserID" json:"user"`
+	App          App    `gorm:"foreignKey:AppID" json:"app"`
 }
 
 func (AppReply) TableName() string {
