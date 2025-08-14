@@ -148,6 +148,9 @@ func setupRoutes(r *gin.Engine) {
 				adminGroup.GET("/reports", api.ListReports)
 				adminGroup.GET("/reports/:id", api.GetReportDetails)
 				adminGroup.POST("/reports/:id/audit", api.AuditReport)
+				
+				adminGroup.GET("/settings/:key", api.GetSetting)
+				adminGroup.PUT("/settings/:key", api.UpdateSetting)
 			}
 		}
 	}

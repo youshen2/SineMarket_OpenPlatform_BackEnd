@@ -63,6 +63,7 @@ func Init() {
 		&models.ProhibitedWord{},
 		&models.UsernameBlacklist{},
 		&models.Report{},
+		&models.Setting{},
 	)
 	if err != nil {
 		log.Fatalf("Failed to auto migrate database: %v", err)

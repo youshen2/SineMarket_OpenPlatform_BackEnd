@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"gorm.io/gorm"
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
 )
@@ -215,6 +216,8 @@ func GetReportDetails(c *gin.Context) {
 	}
 
 	var reportedItem interface{}
+	var parentComment interface{}
+
 	if report.ReportType == 1 {
 		var app models.App
 		db.DB.Preload("Uploader").First(&app, report.ReportID)
@@ -223,13 +226,20 @@ func GetReportDetails(c *gin.Context) {
 		var comment models.AppReply
 		db.DB.Preload("User").Preload("App").First(&comment, report.ReportID)
 		reportedItem = comment
+		if comment.FatherReplyID != 0 {
+			var pComment models.AppReply
+			if err := db.DB.Preload("User").First(&pComment, comment.FatherReplyID).Error; err == nil {
+				parentComment = pComment
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
 		"data": gin.H{
-			"report":       report,
-			"reportedItem": reportedItem,
+			"report":        report,
+			"reportedItem":  reportedItem,
+			"parentComment": parentComment,
 		},
 	})
 }
@@ -325,4 +335,36 @@ func AuditReport(c *gin.Context) {
 
 	tx.Commit()
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "举报处理成功"})
+}
+
+func GetSetting(c *gin.Context) {
+	key := c.Param("key")
+	var setting models.Setting
+	if err := db.DB.Where("setting_key = ?", key).First(&setting).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusOK, gin.H{"code": 200, "data": models.Setting{Key: key, Value: ""}})
+			return
+		}
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "获取设置失败"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "data": setting})
+}
+
+func UpdateSetting(c *gin.Context) {
+	key := c.Param("key")
+	var req struct {
+		Value string `json:"value"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误"})
+		return
+	}
+
+	setting := models.Setting{Key: key, Value: req.Value}
+	if err := db.DB.Save(&setting).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "更新设置失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "设置更新成功"})
 }
