@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"market-api/db"
 	"market-api/models"
 	"market-api/utils"
@@ -15,9 +16,10 @@ import (
 )
 
 type SendNoticeRequest struct {
-	Title   string `json:"title" binding:"required"`
-	Content string `json:"content" binding:"required"`
-	UserIDs []int  `json:"user_ids" binding:"required"`
+	Title   string          `json:"title" binding:"required"`
+	Content string          `json:"content" binding:"required"`
+	UserIDs []int           `json:"user_ids" binding:"required"`
+	Actions json.RawMessage `json:"actions"`
 }
 
 func SendNotice(c *gin.Context) {
@@ -46,6 +48,11 @@ func SendNotice(c *gin.Context) {
 		return
 	}
 
+	actionsJSON := "[]"
+	if len(req.Actions) > 0 && string(req.Actions) != "null" {
+		actionsJSON = string(req.Actions)
+	}
+
 	var notices []models.Notice
 	for _, userID := range targetUserIDs {
 		notice := models.Notice{
@@ -56,7 +63,7 @@ func SendNotice(c *gin.Context) {
 			Desc:         desc,
 			Time:         time.Now().UnixMilli(),
 			ReadStatus:   0,
-			Actions:      "[]",
+			Actions:      actionsJSON,
 		}
 		notices = append(notices, notice)
 	}
@@ -179,4 +186,52 @@ func SendActions(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "云控发送成功"})
+}
+
+type SendEmailRequest struct {
+	UserIDs []int  `json:"user_ids" binding:"required"`
+	Subject string `json:"subject" binding:"required"`
+	Body    string `json:"body" binding:"required"`
+}
+
+func SendEmailToUsers(c *gin.Context) {
+	var req SendEmailRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误: " + err.Error()})
+		return
+	}
+
+	var targetUsers []models.User
+	query := db.DB.Where("verify_email = ?", 1)
+
+	if len(req.UserIDs) == 1 && req.UserIDs[0] == -1 {
+		// Send to all verified users
+		query.Find(&targetUsers)
+	} else {
+		query.Where("id IN ?", req.UserIDs).Find(&targetUsers)
+	}
+
+	if len(targetUsers) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "没有找到任何符合条件的已验证邮箱用户"})
+		return
+	}
+
+	successCount := 0
+	errorCount := 0
+	for _, user := range targetUsers {
+		if user.BindEmail != "" {
+			err := utils.SendEmail(user.BindEmail, req.Subject, req.Body)
+			if err != nil {
+				fmt.Printf("Failed to send email to %s: %v\n", user.BindEmail, err)
+				errorCount++
+			} else {
+				successCount++
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"msg":  fmt.Sprintf("邮件发送任务已提交。成功: %d, 失败: %d", successCount, errorCount),
+	})
 }

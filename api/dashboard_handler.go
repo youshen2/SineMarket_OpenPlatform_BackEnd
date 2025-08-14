@@ -33,10 +33,10 @@ func GetDashboardStats(c *gin.Context) {
 	now := time.Now()
 	year, month, day := now.Date()
 	beginToday := time.Date(year, month, day, 0, 0, 0, 0, now.Location()).Unix()
-    beginTodayMilli := beginToday * 1000
+	beginTodayMilli := beginToday * 1000
 
 	db.DB.Model(&models.Splash{}).Where("time = ?", beginToday).Count(&stats.SplashToday)
-	
+
 	var totalDownloads int64
 	db.DB.Model(&models.UserDownloadCount{}).Where("time >= ?", beginToday).Select("SUM(count)").Row().Scan(&totalDownloads)
 	stats.DownloadsToday = totalDownloads
@@ -47,4 +47,48 @@ func GetDashboardStats(c *gin.Context) {
 	db.DB.Model(&models.AppReply{}).Where("by_userid = ?", currentUser.ID).Count(&stats.MyReplies)
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "data": stats})
+}
+
+type HistoryData struct {
+	Date  string `json:"date"`
+	Count int64  `json:"count"`
+}
+
+func GetSplashHistory(c *gin.Context) {
+	var results []HistoryData
+	fifteenDaysAgo := time.Now().AddDate(0, 0, -15).Unix()
+	db.DB.Model(&models.Splash{}).
+		Select("FROM_UNIXTIME(time, '%Y-%m-%d') as date, COUNT(id) as count").
+		Where("time >= ?", fifteenDaysAgo).
+		Group("date").
+		Order("date ASC").
+		Scan(&results)
+
+	c.JSON(http.StatusOK, gin.H{"code": 200, "data": results})
+}
+
+func GetDownloadHistory(c *gin.Context) {
+	var results []HistoryData
+	fifteenDaysAgo := time.Now().AddDate(0, 0, -15).Unix()
+	db.DB.Model(&models.UserDownloadCount{}).
+		Select("FROM_UNIXTIME(time, '%Y-%m-%d') as date, SUM(count) as count").
+		Where("time >= ?", fifteenDaysAgo).
+		Group("date").
+		Order("date ASC").
+		Scan(&results)
+
+	c.JSON(http.StatusOK, gin.H{"code": 200, "data": results})
+}
+
+func GetRegisterHistory(c *gin.Context) {
+	var results []HistoryData
+	fifteenDaysAgo := time.Now().AddDate(0, 0, -15).UnixMilli()
+	db.DB.Model(&models.User{}).
+		Select("FROM_UNIXTIME(join_time / 1000, '%Y-%m-%d') as date, COUNT(id) as count").
+		Where("join_time >= ?", fifteenDaysAgo).
+		Group("date").
+		Order("date ASC").
+		Scan(&results)
+
+	c.JSON(http.StatusOK, gin.H{"code": 200, "data": results})
 }

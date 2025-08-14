@@ -24,6 +24,7 @@ func main() {
 
 	db.Init()
 
+	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 	r.SetTrustedProxies(nil)
 
@@ -60,24 +61,36 @@ func setupRoutes(r *gin.Engine) {
 		authed := v1.Group("/")
 		authed.Use(middleware.AuthMiddleware())
 		{
-			authed.GET("/dashboard/stats", api.GetDashboardStats)
+			dashboardGroup := authed.Group("/dashboard")
+			{
+				dashboardGroup.GET("/stats", api.GetDashboardStats)
+				dashboardGroup.GET("/history/splash", api.GetSplashHistory)
+				dashboardGroup.GET("/history/downloads", api.GetDownloadHistory)
+				dashboardGroup.GET("/history/registers", api.GetRegisterHistory)
+			}
 
 			meGroup := authed.Group("/me")
 			{
 				meGroup.GET("", api.GetSelfInfo)
 				meGroup.PUT("", api.UpdateSelfInfo)
 				meGroup.PUT("/password", api.ChangePassword)
+				meGroup.GET("/reports", api.ListMyReports)
+				meGroup.GET("/comments", api.ListMyComments)
 			}
 
-			authed.GET("/users", middleware.PermissionMiddleware(2), api.ListUsers)
-			authed.GET("/users/:id", middleware.PermissionMiddleware(2), api.GetUserByID)
-			authed.GET("/users/:id/tokens", middleware.PermissionMiddleware(2), api.ListUserTokens)
-			authed.POST("/users/:id/ban", middleware.PermissionMiddleware(1), api.BanUser)
-			authed.POST("/users/:id/unban", middleware.PermissionMiddleware(1), api.UnbanUser)
-			authed.POST("/users", middleware.PermissionMiddleware(3), api.CreateUser)
-			authed.PUT("/users/:id", middleware.PermissionMiddleware(3), api.UpdateUser)
-			authed.DELETE("/users/:id", middleware.PermissionMiddleware(3), api.DeleteUser)
-			authed.POST("/users/:id/reset-password", middleware.PermissionMiddleware(3), api.ResetPassword)
+			userGroup := authed.Group("/users")
+			{
+				userGroup.GET("", middleware.PermissionMiddleware(2), api.ListUsers)
+				userGroup.POST("", middleware.PermissionMiddleware(3), api.CreateUser)
+				userGroup.GET("/:id", middleware.PermissionMiddleware(2), api.GetUserByID)
+				userGroup.PUT("/:id", middleware.PermissionMiddleware(3), api.UpdateUser)
+				userGroup.DELETE("/:id", middleware.PermissionMiddleware(3), api.DeleteUser)
+				userGroup.GET("/:id/tokens", middleware.PermissionMiddleware(2), api.ListUserTokens)
+				userGroup.POST("/:id/ban", middleware.PermissionMiddleware(1), api.BanUser)
+				userGroup.POST("/:id/unban", middleware.PermissionMiddleware(1), api.UnbanUser)
+				userGroup.POST("/:id/reset-password", middleware.PermissionMiddleware(3), api.ResetPassword)
+				userGroup.POST("/:id/reset-avatar", middleware.PermissionMiddleware(3), api.ResetAvatar)
+			}
 
 			authed.DELETE("/tokens/:id", api.KickUserToken)
 
@@ -119,6 +132,7 @@ func setupRoutes(r *gin.Engine) {
 				operateGroup.POST("/notice", api.SendNotice)
 				operateGroup.POST("/popup", api.SendPopup)
 				operateGroup.POST("/actions", api.SendActions)
+				operateGroup.POST("/email", api.SendEmailToUsers)
 			}
 
 			adminGroup := authed.Group("/admin")
@@ -128,27 +142,27 @@ func setupRoutes(r *gin.Engine) {
 				adminGroup.POST("/banners", api.CreateBanner)
 				adminGroup.PUT("/banners/:id", api.UpdateBanner)
 				adminGroup.DELETE("/banners/:id", api.DeleteBanner)
-				
+
 				adminGroup.GET("/banned-ips", api.ListBannedIPs)
 				adminGroup.POST("/banned-ips", api.CreateBannedIP)
 				adminGroup.DELETE("/banned-ips/:id", api.DeleteBannedIP)
-				
+
 				adminGroup.GET("/prohibited-words", api.ListProhibitedWords)
 				adminGroup.POST("/prohibited-words", api.CreateProhibitedWord)
 				adminGroup.DELETE("/prohibited-words/:id", api.DeleteProhibitedWord)
-				
+
 				adminGroup.GET("/username-blacklists", api.ListUsernameBlacklists)
 				adminGroup.POST("/username-blacklists", api.CreateUsernameBlacklist)
 				adminGroup.DELETE("/username-blacklists/:id", api.DeleteUsernameBlacklist)
-				
+
 				adminGroup.GET("/comments", api.ListComments)
 				adminGroup.PUT("/comments/:id", api.UpdateComment)
 				adminGroup.DELETE("/comments/:id", api.DeleteComment)
-				
+
 				adminGroup.GET("/reports", api.ListReports)
 				adminGroup.GET("/reports/:id", api.GetReportDetails)
 				adminGroup.POST("/reports/:id/audit", api.AuditReport)
-				
+
 				adminGroup.GET("/settings/:key", api.GetSetting)
 				adminGroup.PUT("/settings/:key", api.UpdateSetting)
 			}

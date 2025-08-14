@@ -74,29 +74,28 @@ func Login(c *gin.Context) {
 		LastOnlineTime:  time.Now().UnixMilli(),
 	})
 
+	// Send login reminder email
 	if user.BindEmail != "" && user.VerifyEmail == 1 {
-		go func() {
-			emailData := struct {
-				DisplayName string
-				Time        string
-				DeviceName  string
-				IP          string
-			}{
-				DisplayName: user.DisplayName,
-				Time:        time.Now().Format("2006-01-02 15:04"),
-				DeviceName:  "网页端后台",
-				IP:          c.ClientIP(),
-			}
-			body, err := utils.ParseTemplate("login_reminder.html", emailData)
-			if err != nil {
-				fmt.Printf("Error parsing email template: %v\n", err)
-				return
-			}
+		emailData := struct {
+			DisplayName string
+			Time        string
+			DeviceName  string
+			IP          string
+		}{
+			DisplayName: user.DisplayName,
+			Time:        time.Now().Format("2006-01-02 15:04"),
+			DeviceName:  "网页端后台",
+			IP:          c.ClientIP(),
+		}
+		body, err := utils.ParseTemplate("login_reminder.html", emailData)
+		if err != nil {
+			fmt.Printf("Error parsing email template: %v\n", err)
+		} else {
 			err = utils.SendEmail(user.BindEmail, "【弦-应用商店】登录提醒", body)
 			if err != nil {
 				fmt.Printf("Error sending login email: %v\n", err)
 			}
-		}()
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -440,7 +439,6 @@ func GetUserByID(c *gin.Context) {
 type UpdateProfileRequest struct {
 	DisplayName  string `json:"display_name"`
 	UserDescribe string `json:"user_describe"`
-	BindEmail    string `json:"bind_email"`
 }
 
 func UpdateSelfInfo(c *gin.Context) {
@@ -455,7 +453,6 @@ func UpdateSelfInfo(c *gin.Context) {
 	updates := map[string]interface{}{
 		"display_name":  req.DisplayName,
 		"user_describe": req.UserDescribe,
-		"bind_email":    req.BindEmail,
 	}
 
 	if err := db.DB.Model(&currentUser).Updates(updates).Error; err != nil {
@@ -481,5 +478,74 @@ func UpdateSelfInfo(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200, "msg": "更新成功",
 		"data": gin.H{"user": updatedUser, "token": newToken},
+	})
+}
+
+func ResetAvatar(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var targetUser models.User
+	if err := db.DB.First(&targetUser, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "用户不存在"})
+		return
+	}
+
+	currentUser := c.MustGet("user").(models.User)
+	if currentUser.UserPermission < 3 {
+		c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "无权操作"})
+		return
+	}
+
+	defaultAvatar := viper.GetString("user.default_avatar_url")
+	if err := db.DB.Model(&targetUser).Update("user_avatar", defaultAvatar).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "重置头像失败: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "头像已重置为默认"})
+}
+
+func ListMyReports(c *gin.Context) {
+	currentUser := c.MustGet("user").(models.User)
+	query := db.DB.Model(&models.Report{}).Where("by_userid = ?", currentUser.ID)
+
+	var total int64
+	query.Count(&total)
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	offset := (page - 1) * pageSize
+
+	var reports []models.Report
+	query.Order("report_time desc").Offset(offset).Limit(pageSize).Find(&reports)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"data": gin.H{
+			"list":  reports,
+			"total": total,
+		},
+	})
+}
+
+func ListMyComments(c *gin.Context) {
+	currentUser := c.MustGet("user").(models.User)
+	query := db.DB.Model(&models.AppReply{}).Preload("App").Where("by_userid = ?", currentUser.ID)
+
+	var total int64
+	query.Count(&total)
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	offset := (page - 1) * pageSize
+
+	var comments []models.AppReply
+	query.Order("send_time desc").Offset(offset).Limit(pageSize).Find(&comments)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"data": gin.H{
+			"list":  comments,
+			"total": total,
+		},
 	})
 }
