@@ -27,5 +27,13 @@ user:
 file_server:
   api_url: "http://110.42.57.123:800"
 
+smtp:
+  host: "smtp.qiye.aliyun.com"
+  port: 465
+  user: "postmaster@sineshop.xin"
+  password: "Sine114514"
+  sender_email: "postmaster@sineshop.xin"
+  sender_name: "弦-应用商店"
+
 # 废弃
 app_download_api: "http://example.com/api/get_download_url"

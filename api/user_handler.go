@@ -74,6 +74,31 @@ func Login(c *gin.Context) {
 		LastOnlineTime:  time.Now().UnixMilli(),
 	})
 
+	if user.BindEmail != "" && user.VerifyEmail == 1 {
+		go func() {
+			emailData := struct {
+				DisplayName string
+				Time        string
+				DeviceName  string
+				IP          string
+			}{
+				DisplayName: user.DisplayName,
+				Time:        time.Now().Format("2006-01-02 15:04"),
+				DeviceName:  "网页端后台",
+				IP:          c.ClientIP(),
+			}
+			body, err := utils.ParseTemplate("login_reminder.html", emailData)
+			if err != nil {
+				fmt.Printf("Error parsing email template: %v\n", err)
+				return
+			}
+			err = utils.SendEmail(user.BindEmail, "【弦-应用商店】登录提醒", body)
+			if err != nil {
+				fmt.Printf("Error sending login email: %v\n", err)
+			}
+		}()
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
 		"msg":  "登录成功",
@@ -104,7 +129,7 @@ func UpdateUser(c *gin.Context) {
 	}
 
 	currentUser := c.MustGet("user").(models.User)
-	
+
 	if currentUser.ID == targetUser.ID {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "请通过 '个人中心' 修改自己的信息"})
 		return
@@ -121,7 +146,6 @@ func UpdateUser(c *gin.Context) {
 		"user_official":   reqUser.UserOfficial,
 		"user_badge":      reqUser.UserBadge,
 		"user_permission": reqUser.UserPermission,
-		"bind_email":      reqUser.BindEmail,
 		"verify_email":    reqUser.VerifyEmail,
 	}
 
@@ -238,7 +262,6 @@ func CreateUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "创建成功，默认密码为 123456", "data": newUser})
 }
 
-
 func DeleteUser(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	currentUser := c.MustGet("user").(models.User)
@@ -253,7 +276,7 @@ func DeleteUser(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "用户不存在"})
 		return
 	}
-	
+
 	if currentUser.UserPermission <= targetUser.UserPermission {
 		c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "无权删除该用户"})
 		return
@@ -336,7 +359,7 @@ func UnbanUser(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "解封失败: " + err.Error()})
 		return
 	}
-	
+
 	notice := models.Notice{
 		ByUserID:     targetUser.ID,
 		SenderUserID: currentUser.ID,
