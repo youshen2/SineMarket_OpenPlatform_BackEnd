@@ -1,0 +1,31 @@
+# config/config.yaml
+server:
+  port: 8080
+
+database:
+  host: "127.0.0.1"
+  port: 3306
+  user: "root"
+  password: "123456"
+  dbname: "sinemarket"
+  charset: "utf8mb4"
+
+jwt:
+  secret: "the_moye_yyds"
+  expire_hours: 168
+
+storage:
+  base_url: "http://127.0.0.1:8888"
+  icon_path: "uploads/icons/"
+  preview_path: "uploads/previews/"
+  popup_path: "uploads/popups/"
+  apk_path: "apks/"
+
+user:
+  default_avatar_url: "https://smart.huanjin.xin/p/images/user_avatar/default_avatar.png"
+
+file_server:
+  api_url: "http://110.42.57.123:800"
+
+# 废弃
+app_download_api: "http://example.com/api/get_download_url"
