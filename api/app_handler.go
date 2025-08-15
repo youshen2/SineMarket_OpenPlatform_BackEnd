@@ -154,6 +154,7 @@ func PreUploadApp(c *gin.Context) {
 	appSdkMin, _ := strconv.Atoi(c.PostForm("app_sdk_min"))
 	appSdkTarget, _ := strconv.Atoi(c.PostForm("app_sdk_target"))
 	downloadSize, _ := strconv.ParseInt(c.PostForm("download_size"), 10, 64)
+	appIsWearOS, _ := strconv.Atoi(c.PostForm("app_is_wearos"))
 
 	app := models.App{
 		PackageName:      c.PostForm("package_name"),
@@ -178,6 +179,7 @@ func PreUploadApp(c *gin.Context) {
 		AuditReason:      "应用还在审核中",
 		AppSdkMin:        appSdkMin,
 		AppSdkTarget:     appSdkTarget,
+		AppIsWearOS:      appIsWearOS,
 		DownloadSize:     utils.FormatSizeUnits(downloadSize),
 		UploadTime:       time.Now().UnixMilli(),
 		UpdateTime:       time.Now().UnixMilli(),
@@ -347,6 +349,12 @@ func UpdateApp(c *gin.Context) {
 	}
 	if val, ok := updates["app_sdk_target"]; ok {
 		updates["app_sdk_target"], _ = strconv.Atoi(val.(string))
+	}
+	if val, ok := updates["app_abi"]; ok {
+		updates["app_abi"], _ = strconv.Atoi(val.(string))
+	}
+	if val, ok := updates["app_is_wearos"]; ok {
+		updates["app_is_wearos"], _ = strconv.Atoi(val.(string))
 	}
 
 	updates["audit_status"] = 0
