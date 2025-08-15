@@ -15,6 +15,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+var allowedApkExtensions = []string{"apk"}
+
 func GetAppTags(c *gin.Context) {
 	var tags []models.AppTag
 	db.DB.Find(&tags)
@@ -54,6 +56,21 @@ func ListApps(c *gin.Context) {
 		query = query.Where("app_name LIKE ? OR package_name LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
 	}
 
+	sortField := c.DefaultQuery("sortField", "update_time")
+	sortOrder := c.DefaultQuery("sortOrder", "desc")
+
+	allowedSortFields := map[string]string{
+		"update_time": "update_time",
+	}
+	dbSortField, ok := allowedSortFields[sortField]
+	if !ok {
+		dbSortField = "update_time"
+	}
+
+	if sortOrder != "asc" && sortOrder != "desc" {
+		sortOrder = "desc"
+	}
+
 	var total int64
 	query.Count(&total)
 
@@ -62,7 +79,7 @@ func ListApps(c *gin.Context) {
 	offset := (page - 1) * pageSize
 
 	var apps []models.App
-	query.Order("update_time desc").Offset(offset).Limit(pageSize).Find(&apps)
+	query.Order(fmt.Sprintf("%s %s", dbSortField, sortOrder)).Offset(offset).Limit(pageSize).Find(&apps)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
@@ -98,6 +115,10 @@ func PreUploadApp(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "必须上传应用图标"})
 		return
 	}
+	if !utils.ValidateFileExtension(iconFile[0].Filename, allowedImageExtensions) {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "不支持的图标格式，请上传 jpg, jpeg, png, webp 格式的图片"})
+		return
+	}
 	relativeIconPath, err := utils.SaveUploadedFile(iconFile[0], viper.GetString("storage.icon_path"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "保存图标失败: " + err.Error()})
@@ -108,6 +129,10 @@ func PreUploadApp(c *gin.Context) {
 	var screenshotURLs []string
 	screenshotFiles := form.File["screenshots"]
 	for _, file := range screenshotFiles {
+		if !utils.ValidateFileExtension(file.Filename, allowedImageExtensions) {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "包含不支持的截图格式，请上传 jpg, jpeg, png, webp 格式的图片"})
+			return
+		}
 		relativePath, err := utils.SaveUploadedFile(file, viper.GetString("storage.preview_path"))
 		if err != nil {
 			fmt.Printf("Warning: could not save screenshot %s: %v\n", file.Filename, err)
@@ -233,6 +258,10 @@ func UpdateApp(c *gin.Context) {
 
 	iconFileHeader, ok := form.File["icon"]
 	if ok && len(iconFileHeader) > 0 {
+		if !utils.ValidateFileExtension(iconFileHeader[0].Filename, allowedImageExtensions) {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "不支持的图标格式，请上传 jpg, jpeg, png, webp 格式的图片"})
+			return
+		}
 		if app.LocalIconPath != "" {
 			if err := utils.DeleteFile(app.LocalIconPath); err != nil {
 				fmt.Printf("Warning: failed to delete old icon %s: %v\n", app.LocalIconPath, err)
@@ -275,6 +304,10 @@ func UpdateApp(c *gin.Context) {
 
 	newScreenshotFiles := form.File["screenshots"]
 	for _, file := range newScreenshotFiles {
+		if !utils.ValidateFileExtension(file.Filename, allowedImageExtensions) {
+			c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "包含不支持的截图格式，请上传 jpg, jpeg, png, webp 格式的图片"})
+			return
+		}
 		relativePath, err := utils.SaveUploadedFile(file, viper.GetString("storage.preview_path"))
 		if err != nil {
 			fmt.Printf("Warning: could not save new screenshot %s: %v\n", file.Filename, err)
@@ -512,6 +545,11 @@ func AuditApp(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "审核操作成功"})
 }
 
+type DownloadLinkResponse struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
 func GetAppDownloadTestURL(c *gin.Context) {
 	appID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -520,12 +558,43 @@ func GetAppDownloadTestURL(c *gin.Context) {
 	}
 
 	var downloads []models.AppDownload
-	if err := db.DB.Where("app_id = ? AND audit_status = 1", appID).Find(&downloads).Error; err != nil {
+	if err := db.DB.Where("app_id = ? AND audit_status = 1", appID).Order("id asc").Find(&downloads).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询下载链接失败: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"code": 200, "data": downloads})
+	fileServerApiURL := viper.GetString("file_server.api_url")
+	if fileServerApiURL == "" {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "文件服务器地址未配置"})
+		return
+	}
+
+	var processedDownloads []DownloadLinkResponse
+
+	for _, download := range downloads {
+		var finalURL string
+
+		if download.IsExtra == 1 {
+			apkPath := fmt.Sprintf("apks/%d.apk", download.AppID)
+
+			token, err := utils.GetDownloadToken(apkPath)
+			if err != nil {
+				fmt.Printf("Error getting download token for path %s: %v\n", apkPath, err)
+				continue
+			}
+
+			finalURL = fmt.Sprintf("%s/download?token=%s", fileServerApiURL, token)
+		} else {
+			finalURL = download.URL
+		}
+
+		processedDownloads = append(processedDownloads, DownloadLinkResponse{
+			Name: download.Name,
+			URL:  finalURL,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{"code": 200, "data": processedDownloads})
 }
 
 func ListDownloadsToAudit(c *gin.Context) {
@@ -572,12 +641,32 @@ func AuditAppDownload(c *gin.Context) {
 }
 
 func ListAllSimpleApps(c *gin.Context) {
+	query := db.DB.Model(&models.App{})
+
+	if keyword := c.Query("keyword"); keyword != "" {
+		query = query.Where("app_name LIKE ? OR id LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+	}
+
+	var total int64
+	query.Count(&total)
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	offset := (page - 1) * pageSize
+
 	var apps []struct {
 		ID       int    `json:"id"`
 		AppName  string `json:"app_name"`
 		AppIcon  string `json:"app_icon"`
 		AppPages string `json:"app_pages"`
 	}
-	db.DB.Model(&models.App{}).Select("id, app_name, app_icon, app_pages").Order("id desc").Find(&apps)
-	c.JSON(http.StatusOK, gin.H{"code": 200, "data": apps})
+	query.Select("id, app_name, app_icon, app_pages").Order("id desc").Offset(offset).Limit(pageSize).Find(&apps)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"data": gin.H{
+			"list":  apps,
+			"total": total,
+		},
+	})
 }

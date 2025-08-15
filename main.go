@@ -26,7 +26,7 @@ func main() {
 
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
-	r.SetTrustedProxies(nil)
+	r.SetTrustedProxies([]string{"127.0.0.1"})
 
 	config := cors.DefaultConfig()
 	config.AllowOrigins = []string{"http://localhost:5173", "http://127.0.0.1:5173"}

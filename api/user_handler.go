@@ -74,7 +74,6 @@ func Login(c *gin.Context) {
 		LastOnlineTime:  time.Now().UnixMilli(),
 	})
 
-	// Send login reminder email
 	if user.BindEmail != "" && user.VerifyEmail == 1 {
 		emailData := struct {
 			DisplayName string
@@ -215,6 +214,22 @@ func ListUsers(c *gin.Context) {
 			"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
 	}
 
+	sortField := c.DefaultQuery("sortField", "join_time")
+	sortOrder := c.DefaultQuery("sortOrder", "desc")
+
+	allowedSortFields := map[string]string{
+		"id":        "id",
+		"join_time": "join_time",
+	}
+	dbSortField, ok := allowedSortFields[sortField]
+	if !ok {
+		dbSortField = "join_time"
+	}
+
+	if sortOrder != "asc" && sortOrder != "desc" {
+		sortOrder = "desc"
+	}
+
 	var total int64
 	query.Count(&total)
 
@@ -222,7 +237,7 @@ func ListUsers(c *gin.Context) {
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
 	offset := (page - 1) * pageSize
 
-	query.Order("join_time desc").Offset(offset).Limit(pageSize).Find(&users)
+	query.Order(fmt.Sprintf("%s %s", dbSortField, sortOrder)).Offset(offset).Limit(pageSize).Find(&users)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,

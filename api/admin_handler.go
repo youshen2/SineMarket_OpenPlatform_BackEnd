@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"market-api/db"
 	"market-api/models"
@@ -16,6 +15,8 @@ import (
 	"gorm.io/gorm"
 )
 
+var allowedImageExtensions = []string{"jpg", "jpeg", "png", "webp"}
+
 func ListBanners(c *gin.Context) {
 	var banners []models.Banner
 	db.DB.Order("id desc").Find(&banners)
@@ -29,6 +30,11 @@ func CreateBanner(c *gin.Context) {
 	file, err := c.FormFile("banner")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "图片上传失败: " + err.Error()})
+		return
+	}
+
+	if !utils.ValidateFileExtension(file.Filename, allowedImageExtensions) {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "不支持的图片格式，请上传 jpg, jpeg, png, webp 格式的图片"})
 		return
 	}
 
@@ -58,8 +64,8 @@ func CreateBanner(c *gin.Context) {
 func UpdateBanner(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var req struct {
-		Actions    json.RawMessage `json:"actions"`
-		Visibility int             `json:"visibility"`
+		Actions    string `json:"actions"`
+		Visibility int    `json:"visibility"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误"})
@@ -67,7 +73,7 @@ func UpdateBanner(c *gin.Context) {
 	}
 
 	updates := map[string]interface{}{
-		"actions":    string(req.Actions),
+		"actions":    req.Actions,
 		"visibility": req.Visibility,
 	}
 
@@ -213,6 +219,21 @@ func ListReports(c *gin.Context) {
 			"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%")
 	}
 
+	sortField := c.DefaultQuery("sortField", "report_time")
+	sortOrder := c.DefaultQuery("sortOrder", "desc")
+
+	allowedSortFields := map[string]string{
+		"report_time": "report_time",
+	}
+	dbSortField, ok := allowedSortFields[sortField]
+	if !ok {
+		dbSortField = "report_time"
+	}
+
+	if sortOrder != "asc" && sortOrder != "desc" {
+		sortOrder = "desc"
+	}
+
 	var total int64
 	query.Count(&total)
 
@@ -221,7 +242,7 @@ func ListReports(c *gin.Context) {
 	offset := (page - 1) * pageSize
 
 	var reports []models.Report
-	query.Order("report_time desc").Offset(offset).Limit(pageSize).Find(&reports)
+	query.Order(fmt.Sprintf("%s %s", dbSortField, sortOrder)).Offset(offset).Limit(pageSize).Find(&reports)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
@@ -394,7 +415,6 @@ func UpdateSetting(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "设置更新成功"})
 }
 
-// App Page Handlers
 func ListAppPages(c *gin.Context) {
 	query := db.DB.Model(&models.AppPage{})
 

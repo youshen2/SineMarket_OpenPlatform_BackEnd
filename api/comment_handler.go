@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"market-api/db"
 	"market-api/models"
 	"net/http"
@@ -23,6 +24,22 @@ func ListComments(c *gin.Context) {
 		query = query.Where("content LIKE ?", "%"+keyword+"%")
 	}
 
+	sortField := c.DefaultQuery("sortField", "send_time")
+	sortOrder := c.DefaultQuery("sortOrder", "desc")
+
+	allowedSortFields := map[string]string{
+		"id":        "id",
+		"send_time": "send_time",
+	}
+	dbSortField, ok := allowedSortFields[sortField]
+	if !ok {
+		dbSortField = "send_time"
+	}
+
+	if sortOrder != "asc" && sortOrder != "desc" {
+		sortOrder = "desc"
+	}
+
 	var total int64
 	query.Count(&total)
 
@@ -31,7 +48,7 @@ func ListComments(c *gin.Context) {
 	offset := (page - 1) * pageSize
 
 	var comments []models.AppReply
-	query.Order("send_time desc").Offset(offset).Limit(pageSize).Find(&comments)
+	query.Order(fmt.Sprintf("%s %s", dbSortField, sortOrder)).Offset(offset).Limit(pageSize).Find(&comments)
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,

@@ -53,24 +53,33 @@ func SendNotice(c *gin.Context) {
 		actionsJSON = string(req.Actions)
 	}
 
-	var notices []models.Notice
-	for _, userID := range targetUserIDs {
-		notice := models.Notice{
-			ByUserID:     userID,
-			SenderUserID: sender.ID,
-			Title:        req.Title,
-			Content:      req.Content,
-			Desc:         desc,
-			Time:         time.Now().UnixMilli(),
-			ReadStatus:   0,
-			Actions:      actionsJSON,
+	batchSize := 500
+	for i := 0; i < len(targetUserIDs); i += batchSize {
+		end := i + batchSize
+		if end > len(targetUserIDs) {
+			end = len(targetUserIDs)
 		}
-		notices = append(notices, notice)
-	}
+		batchIDs := targetUserIDs[i:end]
 
-	if err := db.DB.Create(&notices).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "发送通知失败: " + err.Error()})
-		return
+		var notices []models.Notice
+		for _, userID := range batchIDs {
+			notice := models.Notice{
+				ByUserID:     userID,
+				SenderUserID: sender.ID,
+				Title:        req.Title,
+				Content:      req.Content,
+				Desc:         desc,
+				Time:         time.Now().UnixMilli(),
+				ReadStatus:   0,
+				Actions:      actionsJSON,
+			}
+			notices = append(notices, notice)
+		}
+
+		if err := db.DB.Create(&notices).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "发送通知失败: " + err.Error()})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "通知发送成功"})
@@ -82,6 +91,11 @@ func SendPopup(c *gin.Context) {
 	file, err := c.FormFile("image")
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "图片上传失败: " + err.Error()})
+		return
+	}
+
+	if !utils.ValidateFileExtension(file.Filename, allowedImageExtensions) {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "不支持的图片格式，请上传 jpg, jpeg, png, webp 格式的图片"})
 		return
 	}
 
@@ -122,21 +136,30 @@ func SendPopup(c *gin.Context) {
 		return
 	}
 
-	var popups []models.Popup
-	for _, userID := range targetUserIDs {
-		popup := models.Popup{
-			ByUserID:     userID,
-			SenderUserID: sender.ID,
-			ImgURL:       imagePath,
-			Actions:      actions,
-			SurplusCount: surplusCount,
+	batchSize := 500
+	for i := 0; i < len(targetUserIDs); i += batchSize {
+		end := i + batchSize
+		if end > len(targetUserIDs) {
+			end = len(targetUserIDs)
 		}
-		popups = append(popups, popup)
-	}
+		batchIDs := targetUserIDs[i:end]
 
-	if err := db.DB.Create(&popups).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "发送弹窗失败: " + err.Error()})
-		return
+		var popups []models.Popup
+		for _, userID := range batchIDs {
+			popup := models.Popup{
+				ByUserID:     userID,
+				SenderUserID: sender.ID,
+				ImgURL:       imagePath,
+				Actions:      actions,
+				SurplusCount: surplusCount,
+			}
+			popups = append(popups, popup)
+		}
+
+		if err := db.DB.Create(&popups).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "发送弹窗失败: " + err.Error()})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "弹窗发送成功"})
@@ -170,19 +193,28 @@ func SendActions(c *gin.Context) {
 		return
 	}
 
-	var userActions []models.UserAction
-	for _, userID := range targetUserIDs {
-		action := models.UserAction{
-			ByUserID:     userID,
-			Actions:      string(req.Actions),
-			SurplusCount: req.SurplusCount,
+	batchSize := 500
+	for i := 0; i < len(targetUserIDs); i += batchSize {
+		end := i + batchSize
+		if end > len(targetUserIDs) {
+			end = len(targetUserIDs)
 		}
-		userActions = append(userActions, action)
-	}
+		batchIDs := targetUserIDs[i:end]
 
-	if err := db.DB.Create(&userActions).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "发送云控失败: " + err.Error()})
-		return
+		var userActions []models.UserAction
+		for _, userID := range batchIDs {
+			action := models.UserAction{
+				ByUserID:     userID,
+				Actions:      string(req.Actions),
+				SurplusCount: req.SurplusCount,
+			}
+			userActions = append(userActions, action)
+		}
+
+		if err := db.DB.Create(&userActions).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "发送云控失败: " + err.Error()})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "云控发送成功"})
@@ -205,7 +237,6 @@ func SendEmailToUsers(c *gin.Context) {
 	query := db.DB.Where("verify_email = ?", 1)
 
 	if len(req.UserIDs) == 1 && req.UserIDs[0] == -1 {
-		// Send to all verified users
 		query.Find(&targetUsers)
 	} else {
 		query.Where("id IN ?", req.UserIDs).Find(&targetUsers)
@@ -230,8 +261,13 @@ func SendEmailToUsers(c *gin.Context) {
 		}
 	}
 
+	if successCount == 0 && errorCount > 0 {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "所有邮件都发送失败，请检查SMTP配置或联系管理员。"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
-		"msg":  fmt.Sprintf("邮件发送任务已提交。成功: %d, 失败: %d", successCount, errorCount),
+		"msg":  "邮件发送任务已提交",
 	})
 }
