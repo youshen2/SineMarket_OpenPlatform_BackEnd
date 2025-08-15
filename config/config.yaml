@@ -1,6 +1,7 @@
 # config/config.yaml
 server:
   port: 8080
+  base_url: "http://static.sineshop.xin"
 
 database:
   host: "127.0.0.1"
@@ -18,6 +19,7 @@ storage:
   base_url: "http://127.0.0.1:8888"
   icon_path: "uploads/icons/"
   preview_path: "uploads/previews/"
+  banner_path: "uploads/previews/"
   popup_path: "uploads/popups/"
   apk_path: "apks/"
 

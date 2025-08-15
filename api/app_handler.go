@@ -85,6 +85,7 @@ func GetApp(c *gin.Context) {
 
 func PreUploadApp(c *gin.Context) {
 	currentUser := c.MustGet("user").(models.User)
+	baseURL := viper.GetString("server.base_url")
 
 	form, err := c.MultipartForm()
 	if err != nil {
@@ -97,23 +98,25 @@ func PreUploadApp(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "必须上传应用图标"})
 		return
 	}
-	iconPath, err := utils.SaveUploadedFile(iconFile[0], viper.GetString("storage.icon_path"))
+	relativeIconPath, err := utils.SaveUploadedFile(iconFile[0], viper.GetString("storage.icon_path"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "保存图标失败: " + err.Error()})
 		return
 	}
+	fullIconURL := fmt.Sprintf("%s/%s", baseURL, relativeIconPath)
 
-	var screenshotPaths []string
+	var screenshotURLs []string
 	screenshotFiles := form.File["screenshots"]
 	for _, file := range screenshotFiles {
-		path, err := utils.SaveUploadedFile(file, viper.GetString("storage.preview_path"))
+		relativePath, err := utils.SaveUploadedFile(file, viper.GetString("storage.preview_path"))
 		if err != nil {
 			fmt.Printf("Warning: could not save screenshot %s: %v\n", file.Filename, err)
 			continue
 		}
-		screenshotPaths = append(screenshotPaths, path)
+		fullScreenshotURL := fmt.Sprintf("%s/%s", baseURL, relativePath)
+		screenshotURLs = append(screenshotURLs, fullScreenshotURL)
 	}
-	screenshotsJSON, _ := json.Marshal(screenshotPaths)
+	screenshotsJSON, _ := json.Marshal(screenshotURLs)
 
 	versionCode, _ := strconv.Atoi(c.PostForm("version_code"))
 	appTypeID, _ := strconv.Atoi(c.PostForm("app_type_id"))
@@ -129,7 +132,7 @@ func PreUploadApp(c *gin.Context) {
 		Keyword:          c.PostForm("keyword"),
 		VersionCode:      versionCode,
 		VersionName:      c.PostForm("version_name"),
-		AppIcon:          iconPath,
+		AppIcon:          fullIconURL,
 		ByUserID:         currentUser.ID,
 		AppTypeID:        appTypeID,
 		AppVersionTypeID: appVersionTypeID,
@@ -148,22 +151,46 @@ func PreUploadApp(c *gin.Context) {
 		DownloadSize:     utils.FormatSizeUnits(downloadSize),
 		UploadTime:       time.Now().UnixMilli(),
 		UpdateTime:       time.Now().UnixMilli(),
-		LocalIconPath:    strings.TrimPrefix(iconPath, "/"),
+		LocalIconPath:    relativeIconPath,
 	}
 
-	if err := db.DB.Create(&app).Error; err != nil {
+	tx := db.DB.Begin()
+
+	if err := tx.Create(&app).Error; err != nil {
+		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "创建应用记录失败: " + err.Error()})
 		return
 	}
 
 	remoteApkPath := fmt.Sprintf("apks/%d.apk", app.ID)
+
+	defaultDownload := models.AppDownload{
+		AppID:       app.ID,
+		Name:        "新版路线",
+		URL:         remoteApkPath,
+		IsExtra:     1,
+		AuditStatus: 1,
+	}
+	if err := tx.Create(&defaultDownload).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "创建默认下载路线失败: " + err.Error()})
+		return
+	}
+
 	uploadToken, err := utils.GetUploadToken(remoteApkPath)
 	if err != nil {
+		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "获取文件上传凭证失败: " + err.Error()})
 		return
 	}
 
-	db.DB.Model(&app).Update("local_apk_path", remoteApkPath)
+	if err := tx.Model(&app).Update("local_apk_path", remoteApkPath).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "更新应用APK路径失败: " + err.Error()})
+		return
+	}
+
+	tx.Commit()
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
@@ -178,6 +205,7 @@ func PreUploadApp(c *gin.Context) {
 func UpdateApp(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	currentUser := c.MustGet("user").(models.User)
+	baseURL := viper.GetString("server.base_url")
 
 	var app models.App
 	if err := db.DB.First(&app, id).Error; err != nil {
@@ -210,52 +238,53 @@ func UpdateApp(c *gin.Context) {
 				fmt.Printf("Warning: failed to delete old icon %s: %v\n", app.LocalIconPath, err)
 			}
 		}
-		newIconPath, err := utils.SaveUploadedFile(iconFileHeader[0], viper.GetString("storage.icon_path"))
+		relativeNewIconPath, err := utils.SaveUploadedFile(iconFileHeader[0], viper.GetString("storage.icon_path"))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "保存新图标失败: " + err.Error()})
 			return
 		}
-		updates["app_icon"] = newIconPath
-		updates["local_icon_path"] = strings.TrimPrefix(newIconPath, "/")
+		updates["app_icon"] = fmt.Sprintf("%s/%s", baseURL, relativeNewIconPath)
+		updates["local_icon_path"] = relativeNewIconPath
 	}
 
-	var finalScreenshotPaths []string
+	var finalScreenshotURLs []string
 	existingScreenshotsJSON := c.PostForm("existing_screenshots")
-	var existingScreenshotURLs []string
-	if err := json.Unmarshal([]byte(existingScreenshotsJSON), &existingScreenshotURLs); err == nil {
-		finalScreenshotPaths = append(finalScreenshotPaths, existingScreenshotURLs...)
+	var keptScreenshotURLs []string
+	if err := json.Unmarshal([]byte(existingScreenshotsJSON), &keptScreenshotURLs); err == nil {
+		finalScreenshotURLs = append(finalScreenshotURLs, keptScreenshotURLs...)
 	}
 
 	var currentScreenshotURLs []string
 	if app.AppPreviews != "" {
 		json.Unmarshal([]byte(app.AppPreviews), &currentScreenshotURLs)
 	}
-	
+
 	keptScreenshotsMap := make(map[string]bool)
-	for _, url := range existingScreenshotURLs {
+	for _, url := range keptScreenshotURLs {
 		keptScreenshotsMap[url] = true
 	}
 
 	for _, url := range currentScreenshotURLs {
 		if !keptScreenshotsMap[url] {
-			localPath := strings.TrimPrefix(url, "/")
-			if err := utils.DeleteFile(localPath); err != nil {
-				fmt.Printf("Warning: failed to delete screenshot %s: %v\n", localPath, err)
+			relativePath := strings.TrimPrefix(url, baseURL+"/")
+			if err := utils.DeleteFile(relativePath); err != nil {
+				fmt.Printf("Warning: failed to delete screenshot %s: %v\n", relativePath, err)
 			}
 		}
 	}
 
 	newScreenshotFiles := form.File["screenshots"]
 	for _, file := range newScreenshotFiles {
-		path, err := utils.SaveUploadedFile(file, viper.GetString("storage.preview_path"))
+		relativePath, err := utils.SaveUploadedFile(file, viper.GetString("storage.preview_path"))
 		if err != nil {
 			fmt.Printf("Warning: could not save new screenshot %s: %v\n", file.Filename, err)
 			continue
 		}
-		finalScreenshotPaths = append(finalScreenshotPaths, path)
+		fullNewURL := fmt.Sprintf("%s/%s", baseURL, relativePath)
+		finalScreenshotURLs = append(finalScreenshotURLs, fullNewURL)
 	}
 
-	newScreenshotsJSON, _ := json.Marshal(finalScreenshotPaths)
+	newScreenshotsJSON, _ := json.Marshal(finalScreenshotURLs)
 	updates["app_previews"] = string(newScreenshotsJSON)
 
 	if val, ok := updates["version_code"]; ok {
@@ -302,6 +331,27 @@ func DeleteApp(c *gin.Context) {
 	if app.ByUserID != currentUser.ID && currentUser.UserPermission < 3 {
 		c.JSON(http.StatusForbidden, gin.H{"code": 403, "msg": "无权删除此应用"})
 		return
+	}
+
+	if app.LocalIconPath != "" {
+		if err := utils.DeleteFile(app.LocalIconPath); err != nil {
+			fmt.Printf("Warning: failed to delete icon file %s for app ID %d: %v\n", app.LocalIconPath, app.ID, err)
+		}
+	}
+
+	if app.AppPreviews != "" {
+		var screenshotURLs []string
+		if err := json.Unmarshal([]byte(app.AppPreviews), &screenshotURLs); err == nil {
+			baseURL := viper.GetString("server.base_url")
+			for _, url := range screenshotURLs {
+				if strings.HasPrefix(url, baseURL) {
+					relativePath := strings.TrimPrefix(url, baseURL+"/")
+					if err := utils.DeleteFile(relativePath); err != nil {
+						fmt.Printf("Warning: failed to delete screenshot file %s for app ID %d: %v\n", relativePath, app.ID, err)
+					}
+				}
+			}
+		}
 	}
 
 	tx := db.DB.Begin()

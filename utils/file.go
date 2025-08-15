@@ -18,8 +18,8 @@ func SaveUploadedFile(file *multipart.FileHeader, destDir string) (string, error
 	ext := filepath.Ext(file.Filename)
 	newFileName := uuid.New().String() + ext
 
-	basePath := viper.GetString("storage.base_path")
-	localDestPath := filepath.Join(basePath, destDir)
+	localBasePath := viper.GetString("storage.base_url")
+	localDestPath := filepath.Join(localBasePath, destDir)
 
 	if err := os.MkdirAll(localDestPath, os.ModePerm); err != nil {
 		return "", err
@@ -42,15 +42,15 @@ func SaveUploadedFile(file *multipart.FileHeader, destDir string) (string, error
 		return "", err
 	}
 
-	webPath := "/" + filepath.ToSlash(filepath.Join(basePath, destDir, newFileName))
-	return webPath, nil
+	relativePath := filepath.ToSlash(filepath.Join(destDir, newFileName))
+	return relativePath, nil
 }
 
-func DeleteFile(filePath string) error {
-	basePath := viper.GetString("storage.base_path")
-	fullPath := filepath.Join(basePath, filePath)
+func DeleteFile(relativePath string) error {
+	localBasePath := viper.GetString("storage.base_url")
+	fullPath := filepath.Join(localBasePath, relativePath)
 
-	absBasePath, err := filepath.Abs(basePath)
+	absBasePath, err := filepath.Abs(localBasePath)
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func DeleteFile(filePath string) error {
 		return err
 	}
 	if !filepath.HasPrefix(absFullPath, absBasePath) {
-		return fmt.Errorf("invalid file path for deletion")
+		return fmt.Errorf("invalid file path for deletion: %s", relativePath)
 	}
 
 	if _, err := os.Stat(fullPath); os.IsNotExist(err) {

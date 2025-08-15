@@ -7,11 +7,12 @@ import (
 	"market-api/utils"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
-	"gorm.io/gorm"
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/viper"
+	"gorm.io/gorm"
 )
 
 func ListBanners(c *gin.Context) {
@@ -30,14 +31,17 @@ func CreateBanner(c *gin.Context) {
 		return
 	}
 
-	bannerPath, err := utils.SaveUploadedFile(file, viper.GetString("storage.banner_path"))
+	relativeBannerPath, err := utils.SaveUploadedFile(file, viper.GetString("storage.banner_path"))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "保存图片失败: " + err.Error()})
 		return
 	}
 
+	baseURL := viper.GetString("server.base_url")
+	fullBannerURL := fmt.Sprintf("%s/%s", baseURL, relativeBannerPath)
+
 	banner := models.Banner{
-		BannerURL:  bannerPath,
+		BannerURL:  fullBannerURL,
 		Actions:    actions,
 		Visibility: visibility,
 	}
@@ -75,10 +79,30 @@ func UpdateBanner(c *gin.Context) {
 
 func DeleteBanner(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	if err := db.DB.Delete(&models.Banner{}, id).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "删除失败: " + err.Error()})
+
+	var banner models.Banner
+	if err := db.DB.First(&banner, id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "头图不存在"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询头图失败: " + err.Error()})
 		return
 	}
+
+	baseURL := viper.GetString("server.base_url")
+	if banner.BannerURL != "" && strings.HasPrefix(banner.BannerURL, baseURL) {
+		relativePath := strings.TrimPrefix(banner.BannerURL, baseURL+"/")
+		if err := utils.DeleteFile(relativePath); err != nil {
+			fmt.Printf("Warning: failed to delete banner image file %s: %v\n", relativePath, err)
+		}
+	}
+
+	if err := db.DB.Delete(&models.Banner{}, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "删除数据库记录失败: " + err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "删除成功"})
 }
 
