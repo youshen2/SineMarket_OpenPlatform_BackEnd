@@ -484,10 +484,31 @@ func UpdateAppPage(c *gin.Context) {
 
 func DeleteAppPage(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
-	if err := db.DB.Delete(&models.AppPage{}, id).Error; err != nil {
+
+	tx := db.DB.Begin()
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "开启事务失败: " + tx.Error.Error()})
+		return
+	}
+
+	pageIDStr := strconv.Itoa(id)
+	searchStr := fmt.Sprintf("%s,", pageIDStr)
+
+	if err := tx.Model(&models.App{}).
+		Where("app_pages LIKE ?", "%,"+searchStr+"%").
+		Update("app_pages", gorm.Expr("REPLACE(app_pages, ?, ?)", searchStr, "")).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "从应用中移除专题关联失败: " + err.Error()})
+		return
+	}
+
+	if err := tx.Delete(&models.AppPage{}, id).Error; err != nil {
+		tx.Rollback()
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "删除专题失败: " + err.Error()})
 		return
 	}
+
+	tx.Commit()
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "删除成功"})
 }
 
@@ -497,7 +518,6 @@ func SyncAppsToPage(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "无效的专题ID"})
 		return
 	}
-	pageIDStr := strconv.Itoa(pageID)
 
 	var req struct {
 		AppIDs []int `json:"app_ids"`
@@ -508,59 +528,30 @@ func SyncAppsToPage(c *gin.Context) {
 	}
 
 	tx := db.DB.Begin()
-
-	var currentlyAssociatedApps []models.App
-	if err := tx.Where("FIND_IN_SET(?, app_pages)", pageID).Find(&currentlyAssociatedApps).Error; err != nil {
-		tx.Rollback()
-		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询当前关联应用失败"})
+	if tx.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "开启事务失败: " + tx.Error.Error()})
 		return
 	}
 
-	for _, app := range currentlyAssociatedApps {
-		pageIDs := strings.Split(app.AppPages, ",")
-		newPageIDs := []string{}
-		for _, id := range pageIDs {
-			if id != "" && id != pageIDStr {
-				newPageIDs = append(newPageIDs, id)
-			}
-		}
-		newAppPages := strings.Join(newPageIDs, ",")
-		if err := tx.Model(&models.App{}).Where("id = ?", app.ID).Update("app_pages", newAppPages).Error; err != nil {
-			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "移除旧关联失败"})
-			return
-		}
+	pageIDStr := strconv.Itoa(pageID)
+	searchStr := fmt.Sprintf("%s,", pageIDStr)
+
+	if err := tx.Model(&models.App{}).
+		Where("app_pages LIKE ?", "%,"+searchStr+"%").
+		Update("app_pages", gorm.Expr("REPLACE(app_pages, ?, ?)", searchStr, "")).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "移除旧的应用关联失败: " + err.Error()})
+		return
 	}
 
 	if len(req.AppIDs) > 0 {
-		var appsToUpdate []models.App
-		if err := tx.Where("id IN ?", req.AppIDs).Find(&appsToUpdate).Error; err != nil {
+		appendStr := fmt.Sprintf("%s,", pageIDStr)
+		if err := tx.Model(&models.App{}).
+			Where("id IN ?", req.AppIDs).
+			Update("app_pages", gorm.Expr("CONCAT(app_pages, ?)", appendStr)).Error; err != nil {
 			tx.Rollback()
-			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询新关联应用失败"})
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "添加新的应用关联失败: " + err.Error()})
 			return
-		}
-
-		for _, app := range appsToUpdate {
-			pageIDs := strings.Split(app.AppPages, ",")
-			found := false
-			for _, id := range pageIDs {
-				if id == pageIDStr {
-					found = true
-					break
-				}
-			}
-			if !found {
-				if app.AppPages == "" {
-					app.AppPages = pageIDStr
-				} else {
-					app.AppPages = app.AppPages + "," + pageIDStr
-				}
-				if err := tx.Model(&models.App{}).Where("id = ?", app.ID).Update("app_pages", app.AppPages).Error; err != nil {
-					tx.Rollback()
-					c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "添加新关联失败"})
-					return
-				}
-			}
 		}
 	}
 

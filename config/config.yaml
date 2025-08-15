@@ -1,14 +1,13 @@
-# config/config.yaml
 server:
-  port: 8080
+  port: 8062
   base_url: "http://static.sineshop.xin"
 
 database:
   host: "127.0.0.1"
   port: 3306
-  user: "root"
-  password: "123456"
-  dbname: "sinemarket"
+  user: "sine"
+  password: "DkPBNrGyKZnx65ty"
+  dbname: "sine"
   charset: "utf8mb4"
 
 jwt:
@@ -16,15 +15,16 @@ jwt:
   expire_hours: 168
 
 storage:
-  base_url: "http://127.0.0.1:8888"
-  icon_path: "uploads/icons/"
-  preview_path: "uploads/previews/"
-  banner_path: "uploads/previews/"
-  popup_path: "uploads/popups/"
-  apk_path: "apks/"
+  base_url: "/sine/data/" # 别问，问就是我怕哪里还用到了base_url就没删
+  base_path: "/sine/data/"
+  icon_path: "images/app_icon"
+  preview_path: "images/app_previews"
+  banner_path: "images/banana"
+  popup_path: "images/popup"
+  apk_path: "apks"
 
 user:
-  default_avatar_url: "https://smart.huanjin.xin/p/images/user_avatar/default_avatar.png"
+  default_avatar_url: "http://smart.huanjin.xin/images/user_avatar/default_avatar.png"
 
 file_server:
   api_url: "http://110.42.57.123:800"
@@ -38,4 +38,4 @@ smtp:
   sender_name: "弦-应用商店"
 
 # 废弃
-app_download_api: "http://example.com/api/get_download_url"
+app_download_api: ""

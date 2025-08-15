@@ -141,6 +141,10 @@ func PreUploadApp(c *gin.Context) {
 		fullScreenshotURL := fmt.Sprintf("%s/%s", baseURL, relativePath)
 		screenshotURLs = append(screenshotURLs, fullScreenshotURL)
 	}
+
+	if screenshotURLs == nil {
+		screenshotURLs = make([]string, 0)
+	}
 	screenshotsJSON, _ := json.Marshal(screenshotURLs)
 
 	versionCode, _ := strconv.Atoi(c.PostForm("version_code"))
@@ -163,6 +167,7 @@ func PreUploadApp(c *gin.Context) {
 		AppVersionTypeID: appVersionTypeID,
 		AppABI:           appABI,
 		AppTags:          c.PostForm("app_tags"),
+		AppPages:         ",",
 		AppPreviews:      string(screenshotsJSON),
 		AppDescribe:      c.PostForm("app_describe"),
 		AppUpdateLog:     c.PostForm("app_update_log"),
@@ -317,6 +322,9 @@ func UpdateApp(c *gin.Context) {
 		finalScreenshotURLs = append(finalScreenshotURLs, fullNewURL)
 	}
 
+	if finalScreenshotURLs == nil {
+		finalScreenshotURLs = make([]string, 0)
+	}
 	newScreenshotsJSON, _ := json.Marshal(finalScreenshotURLs)
 	updates["app_previews"] = string(newScreenshotsJSON)
 
@@ -324,10 +332,15 @@ func UpdateApp(c *gin.Context) {
 		updates["version_code"], _ = strconv.Atoi(val.(string))
 	}
 	if val, ok := updates["app_type_id"]; ok {
-		updates["app_type_id"], _ = strconv.Atoi(val.(string))
+		updates["app_type"], _ = strconv.Atoi(val.(string))
+		delete(updates, "app_type_id")
 	}
 	if val, ok := updates["app_version_type_id"]; ok {
-		updates["app_version_type_id"], _ = strconv.Atoi(val.(string))
+		updates["app_version_type"], _ = strconv.Atoi(val.(string))
+		delete(updates, "app_version_type_id")
+	}
+	if val, ok := updates["app_tags"]; ok {
+		updates["app_tags"] = fmt.Sprintf(",%s,", val.(string))
 	}
 	if val, ok := updates["app_sdk_min"]; ok {
 		updates["app_sdk_min"], _ = strconv.Atoi(val.(string))
@@ -342,6 +355,7 @@ func UpdateApp(c *gin.Context) {
 
 	delete(updates, "package_name")
 	delete(updates, "existing_screenshots")
+	delete(updates, "uploader")
 
 	if err := db.DB.Model(&app).Updates(updates).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "更新应用失败: " + err.Error()})
@@ -652,7 +666,6 @@ func ListAllSimpleApps(c *gin.Context) {
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
-	offset := (page - 1) * pageSize
 
 	var apps []struct {
 		ID       int    `json:"id"`
@@ -660,7 +673,13 @@ func ListAllSimpleApps(c *gin.Context) {
 		AppIcon  string `json:"app_icon"`
 		AppPages string `json:"app_pages"`
 	}
-	query.Select("id, app_name, app_icon, app_pages").Order("id desc").Offset(offset).Limit(pageSize).Find(&apps)
+
+	if pageSize > 500 {
+		query.Select("id, app_name, app_icon, app_pages").Order("id desc").Find(&apps)
+	} else {
+		offset := (page - 1) * pageSize
+		query.Select("id, app_name, app_icon, app_pages").Order("id desc").Offset(offset).Limit(pageSize).Find(&apps)
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"code": 200,
