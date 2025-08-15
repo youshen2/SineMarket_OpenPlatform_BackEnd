@@ -570,3 +570,14 @@ func AuditAppDownload(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "审核成功"})
 }
+
+func ListAllSimpleApps(c *gin.Context) {
+	var apps []struct {
+		ID       int    `json:"id"`
+		AppName  string `json:"app_name"`
+		AppIcon  string `json:"app_icon"`
+		AppPages string `json:"app_pages"`
+	}
+	db.DB.Model(&models.App{}).Select("id, app_name, app_icon, app_pages").Order("id desc").Find(&apps)
+	c.JSON(http.StatusOK, gin.H{"code": 200, "data": apps})
+}

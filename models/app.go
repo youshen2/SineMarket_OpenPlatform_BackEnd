@@ -122,3 +122,17 @@ type AppReply struct {
 func (AppReply) TableName() string {
 	return "market_app_reply_list"
 }
+
+type AppPage struct {
+	ID         int    `gorm:"primaryKey;column:id" json:"id"`
+	Title      string `gorm:"type:text;column:title" json:"title"`
+	Content    string `gorm:"type:text;column:content" json:"content"`
+	ImgList    string `gorm:"type:text;column:img_list" json:"img_list"`
+	Time       int64  `gorm:"column:time" json:"time"`
+	HasAppList int    `gorm:"column:has_app_list" json:"has_app_list"`
+	ShowInList int    `gorm:"column:show_in_list" json:"show_in_list"`
+}
+
+func (AppPage) TableName() string {
+	return "market_app_page_list"
+}

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"market-api/db"
 	"market-api/models"
@@ -57,8 +58,8 @@ func CreateBanner(c *gin.Context) {
 func UpdateBanner(c *gin.Context) {
 	id, _ := strconv.Atoi(c.Param("id"))
 	var req struct {
-		Actions    string `json:"actions"`
-		Visibility int    `json:"visibility"`
+		Actions    json.RawMessage `json:"actions"`
+		Visibility int             `json:"visibility"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误"})
@@ -66,7 +67,7 @@ func UpdateBanner(c *gin.Context) {
 	}
 
 	updates := map[string]interface{}{
-		"actions":    req.Actions,
+		"actions":    string(req.Actions),
 		"visibility": req.Visibility,
 	}
 
@@ -391,4 +392,158 @@ func UpdateSetting(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "设置更新成功"})
+}
+
+// App Page Handlers
+func ListAppPages(c *gin.Context) {
+	query := db.DB.Model(&models.AppPage{})
+
+	var total int64
+	query.Count(&total)
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	offset := (page - 1) * pageSize
+
+	var pages []models.AppPage
+	query.Order("id desc").Offset(offset).Limit(pageSize).Find(&pages)
+
+	c.JSON(http.StatusOK, gin.H{
+		"code": 200,
+		"data": gin.H{
+			"list":  pages,
+			"total": total,
+		},
+	})
+}
+
+func GetAppPage(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var page models.AppPage
+	if err := db.DB.First(&page, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"code": 404, "msg": "专题不存在"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "data": page})
+}
+
+func CreateAppPage(c *gin.Context) {
+	var page models.AppPage
+	if err := c.ShouldBindJSON(&page); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误: " + err.Error()})
+		return
+	}
+	page.Time = time.Now().UnixMilli()
+	if err := db.DB.Create(&page).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "创建专题失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "创建成功", "data": page})
+}
+
+func UpdateAppPage(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	var page models.AppPage
+	if err := c.ShouldBindJSON(&page); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误: " + err.Error()})
+		return
+	}
+	updates := map[string]interface{}{
+		"title":        page.Title,
+		"content":      page.Content,
+		"img_list":     page.ImgList,
+		"has_app_list": page.HasAppList,
+		"show_in_list": page.ShowInList,
+	}
+	if err := db.DB.Model(&models.AppPage{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "更新专题失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "更新成功"})
+}
+
+func DeleteAppPage(c *gin.Context) {
+	id, _ := strconv.Atoi(c.Param("id"))
+	if err := db.DB.Delete(&models.AppPage{}, id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "删除专题失败: " + err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "删除成功"})
+}
+
+func SyncAppsToPage(c *gin.Context) {
+	pageID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "无效的专题ID"})
+		return
+	}
+	pageIDStr := strconv.Itoa(pageID)
+
+	var req struct {
+		AppIDs []int `json:"app_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": 400, "msg": "参数错误: " + err.Error()})
+		return
+	}
+
+	tx := db.DB.Begin()
+
+	var currentlyAssociatedApps []models.App
+	if err := tx.Where("FIND_IN_SET(?, app_pages)", pageID).Find(&currentlyAssociatedApps).Error; err != nil {
+		tx.Rollback()
+		c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询当前关联应用失败"})
+		return
+	}
+
+	for _, app := range currentlyAssociatedApps {
+		pageIDs := strings.Split(app.AppPages, ",")
+		newPageIDs := []string{}
+		for _, id := range pageIDs {
+			if id != "" && id != pageIDStr {
+				newPageIDs = append(newPageIDs, id)
+			}
+		}
+		newAppPages := strings.Join(newPageIDs, ",")
+		if err := tx.Model(&models.App{}).Where("id = ?", app.ID).Update("app_pages", newAppPages).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "移除旧关联失败"})
+			return
+		}
+	}
+
+	if len(req.AppIDs) > 0 {
+		var appsToUpdate []models.App
+		if err := tx.Where("id IN ?", req.AppIDs).Find(&appsToUpdate).Error; err != nil {
+			tx.Rollback()
+			c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "查询新关联应用失败"})
+			return
+		}
+
+		for _, app := range appsToUpdate {
+			pageIDs := strings.Split(app.AppPages, ",")
+			found := false
+			for _, id := range pageIDs {
+				if id == pageIDStr {
+					found = true
+					break
+				}
+			}
+			if !found {
+				if app.AppPages == "" {
+					app.AppPages = pageIDStr
+				} else {
+					app.AppPages = app.AppPages + "," + pageIDStr
+				}
+				if err := tx.Model(&models.App{}).Where("id = ?", app.ID).Update("app_pages", app.AppPages).Error; err != nil {
+					tx.Rollback()
+					c.JSON(http.StatusInternalServerError, gin.H{"code": 500, "msg": "添加新关联失败"})
+					return
+				}
+			}
+		}
+	}
+
+	tx.Commit()
+	c.JSON(http.StatusOK, gin.H{"code": 200, "msg": "应用关联同步成功"})
 }

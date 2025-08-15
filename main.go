@@ -97,6 +97,7 @@ func setupRoutes(r *gin.Engine) {
 			appGroup := authed.Group("/apps")
 			{
 				appGroup.GET("", api.ListApps)
+				appGroup.GET("/simple-list", api.ListAllSimpleApps)
 				appGroup.GET("/:id", api.GetApp)
 				appGroup.POST("/pre-upload", api.PreUploadApp)
 				appGroup.PUT("/:id", api.UpdateApp)
@@ -165,6 +166,16 @@ func setupRoutes(r *gin.Engine) {
 
 				adminGroup.GET("/settings/:key", api.GetSetting)
 				adminGroup.PUT("/settings/:key", api.UpdateSetting)
+
+				pageGroup := adminGroup.Group("/pages")
+				{
+					pageGroup.GET("", api.ListAppPages)
+					pageGroup.POST("", api.CreateAppPage)
+					pageGroup.GET("/:id", api.GetAppPage)
+					pageGroup.PUT("/:id", api.UpdateAppPage)
+					pageGroup.DELETE("/:id", api.DeleteAppPage)
+					pageGroup.POST("/:id/sync-apps", api.SyncAppsToPage)
+				}
 			}
 		}
 	}

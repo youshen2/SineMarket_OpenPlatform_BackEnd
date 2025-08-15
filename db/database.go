@@ -64,6 +64,7 @@ func Init() {
 		&models.UsernameBlacklist{},
 		&models.Report{},
 		&models.Setting{},
+		&models.AppPage{},
 	)
 	if err != nil {
 		log.Fatalf("Failed to auto migrate database: %v", err)
