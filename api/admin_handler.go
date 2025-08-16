@@ -330,11 +330,12 @@ func AuditReport(c *gin.Context) {
 
 	noticeToReporter := models.Notice{
 		ByUserID:     report.ByUserID,
-		SenderUserID: currentUser.ID,
+		SenderUserID: -1,
 		Title:        "举报已处理",
 		Content:      fmt.Sprintf("您关于「%s」的举报已由运营【%s】处理。", report.ReportTitle, currentUser.DisplayName),
 		Desc:         "处理回复：" + req.Reply,
 		Time:         time.Now().UnixMilli(),
+		Actions:      "[]",
 	}
 	if err := tx.Create(&noticeToReporter).Error; err != nil {
 		tx.Rollback()
@@ -358,11 +359,12 @@ func AuditReport(c *gin.Context) {
 				}
 				noticeToUploader := models.Notice{
 					ByUserID:     app.ByUserID,
-					SenderUserID: currentUser.ID,
+					SenderUserID: -1,
 					Title:        "应用审核不通过",
 					Content:      fmt.Sprintf("您上传的应用「%s」经用户举报，由【%s】审核后被处理下架。", app.AppName, currentUser.DisplayName),
 					Desc:         "异议请联系对应运营",
 					Time:         time.Now().UnixMilli(),
+					Actions:      "[]",
 				}
 				if err := tx.Create(&noticeToUploader).Error; err != nil {
 					tx.Rollback()

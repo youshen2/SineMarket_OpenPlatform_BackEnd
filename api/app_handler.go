@@ -557,10 +557,11 @@ func AuditApp(c *gin.Context) {
 
 	notice := models.Notice{
 		ByUserID:     app.ByUserID,
-		SenderUserID: currentUser.ID,
+		SenderUserID: -1,
 		Title:        title,
 		Content:      content,
 		Time:         time.Now().UnixMilli(),
+		Actions:      "[]",
 	}
 	db.DB.Create(&notice)
 

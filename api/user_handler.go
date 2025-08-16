@@ -342,7 +342,7 @@ func BanUser(c *gin.Context) {
 
 	notice := models.Notice{
 		ByUserID:     targetUser.ID,
-		SenderUserID: currentUser.ID,
+		SenderUserID: -1,
 		Title:        "账号被封禁",
 		Content:      fmt.Sprintf("您的账号因为〖%s〗被运营【%s】封禁。", req.Reason, currentUser.DisplayName),
 		Desc:         "异议请联系对应运营",
@@ -376,7 +376,7 @@ func UnbanUser(c *gin.Context) {
 
 	notice := models.Notice{
 		ByUserID:     targetUser.ID,
-		SenderUserID: currentUser.ID,
+		SenderUserID: -1,
 		Title:        "封禁已解除",
 		Content:      fmt.Sprintf("您的账号由运营【%s】解除封禁。", currentUser.DisplayName),
 		Desc:         "欢迎回来",
